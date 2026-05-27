@@ -121,6 +121,23 @@ export class PlantScene {
     this._onPointerCancel = (event) => this.handlePointerCancel(event);
     this._onWheel = (event) => this.handleWheel(event);
     this._onContextMenu = (event) => event.preventDefault();
+    this._onKeyDown = (event) => {
+      const key = event.key.toLowerCase();
+      if (['w', 'e', 'r', 'q', 'a'].includes(key)) {
+        event.preventDefault();
+        if (key === 'w') {
+          this.transformControls.mode = 'translate';
+        } else if (key === 'e') {
+          this.transformControls.mode = 'rotate';
+        } else if (key === 'r') {
+          this.transformControls.mode = 'scale';
+        } else if (key === 'q') {
+          this.transformControls.space = 'local';
+        } else if (key === 'a') {
+          this.transformControls.space = 'world';
+        }
+      }
+    };
 
     window.addEventListener('resize', this._onResize);
     this.canvas.addEventListener('pointerdown', this._onPointerDown);
@@ -129,6 +146,7 @@ export class PlantScene {
     this.canvas.addEventListener('pointercancel', this._onPointerCancel);
     this.canvas.addEventListener('wheel', this._onWheel, { passive: false });
     this.canvas.addEventListener('contextmenu', this._onContextMenu);
+    window.addEventListener('keydown', this._onKeyDown);
 
     // Set cursor styles
     this.canvas.style.cursor = 'default';
@@ -452,7 +470,7 @@ export class PlantScene {
       this._cameraPolar = Math.max(0.01, Math.min(Math.PI - 0.01, this._cameraPolar));
       this._updateCameraPosition();
     } else if (this._dragMode === 'pan') { // Left mouse button - pan
-      const panSpeed = 0.004;
+      const panSpeed = 0.002;
       const cameraPosition = this.camera.position;
       const target = this._cameraTarget;
 
@@ -563,6 +581,7 @@ export class PlantScene {
     this.canvas.removeEventListener('pointercancel', this._onPointerCancel);
     this.canvas.removeEventListener('wheel', this._onWheel);
     this.canvas.removeEventListener('contextmenu', this._onContextMenu);
+    window.removeEventListener('keydown', this._onKeyDown);
     this.clearMachines();
     this.renderer.dispose();
     this.scene.remove(this.transformControls.getHelper()); // Remove helper from scene
