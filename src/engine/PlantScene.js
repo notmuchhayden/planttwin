@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 export class PlantScene {
   constructor(canvas, options = {}) {
@@ -20,15 +22,34 @@ export class PlantScene {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.gltfLoader = new GLTFLoader();
+    this._glbCache = new Map();
 
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
+    this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.machineRoots = new Map();
     this.selectedMachineId = null;
     this._isDisposed = false;
 
+    // Camera controls state
+    this._isDragging = false;
+    this._dragMode = null; // null, 'orbit', 'pan'
+    this._lastPointer = new THREE.Vector2();
+    this._cameraTarget = new THREE.Vector3(0, 0, 0); // World origin
+    this._cameraDistance = 0;
+    this._cameraAzimuth = 0;
+    this._cameraPolar = 0;
+
+    // Initialize camera state from current position
+    const cameraToTarget = new THREE.Vector3().subVectors(this.camera.position, this._cameraTarget);
+    this._cameraDistance = cameraToTarget.length();
+    this._cameraAzimuth = Math.atan2(cameraToTarget.z, cameraToTarget.x);
+    this._cameraPolar = Math.acos(cameraToTarget.y / this._cameraDistance);
+
     this._buildEnvironment();
     this._bindEvents();
+    this._bindResizeObserver();
     this.resize();
     this.animate();
   }
@@ -73,9 +94,38 @@ export class PlantScene {
   _bindEvents() {
     this._onResize = () => this.resize();
     this._onPointerDown = (event) => this.handlePointerDown(event);
+    this._onPointerMove = (event) => this.handlePointerMove(event);
+    this._onPointerUp = (event) => this.handlePointerUp(event);
+    this._onPointerCancel = (event) => this.handlePointerCancel(event);
+    this._onWheel = (event) => this.handleWheel(event);
+    this._onContextMenu = (event) => event.preventDefault();
 
     window.addEventListener('resize', this._onResize);
     this.canvas.addEventListener('pointerdown', this._onPointerDown);
+    this.canvas.addEventListener('pointermove', this._onPointerMove);
+    this.canvas.addEventListener('pointerup', this._onPointerUp);
+    this.canvas.addEventListener('pointercancel', this._onPointerCancel);
+    this.canvas.addEventListener('wheel', this._onWheel, { passive: false });
+    this.canvas.addEventListener('contextmenu', this._onContextMenu);
+
+    // Set cursor styles
+    this.canvas.style.cursor = 'default';
+  }
+
+  _bindResizeObserver() {
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const resizeTarget = this.canvas.parentElement;
+    if (!resizeTarget) {
+      return;
+    }
+
+    this._resizeObserver = new ResizeObserver(() => {
+      this.resize();
+    });
+    this._resizeObserver.observe(resizeTarget);
   }
 
   _createMachineNode(machine) {
@@ -84,6 +134,7 @@ export class PlantScene {
     group.userData.machineId = machine.id;
     group.userData.baseColor = machine.color;
     group.userData.machineName = machine.name;
+    group.userData.assetKind = machine.kind ?? 'machine';
 
     const bodyMaterial = new THREE.MeshStandardMaterial({
       color: machine.color,
@@ -91,13 +142,11 @@ export class PlantScene {
       metalness: 0.2,
     });
 
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(machine.size[0], machine.size[1], machine.size[2]),
-      bodyMaterial,
-    );
+    const body = this._createAssetGeometry(machine, bodyMaterial);
     body.position.y = machine.size[1] / 2;
     body.castShadow = true;
     body.receiveShadow = true;
+    body.visible = machine.kind !== 'glb';
     group.add(body);
 
     const accent = new THREE.Mesh(
@@ -136,7 +185,92 @@ export class PlantScene {
     group.userData.bodyMaterial = bodyMaterial;
     group.userData.bodyMesh = body;
 
+    if (machine.kind === 'glb') {
+      this._attachGlbModel(group, machine);
+    }
+
     return group;
+  }
+
+  _createAssetGeometry(machine, material) {
+    const [width, height, depth] = machine.size;
+
+    if (machine.kind === 'primitive') {
+      if (machine.primitiveType === 'sphere') {
+        return new THREE.Mesh(
+          new THREE.SphereGeometry(Math.max(width, height, depth) / 2, 24, 16),
+          material,
+        );
+      }
+
+      if (machine.primitiveType === 'cylinder') {
+        return new THREE.Mesh(
+          new THREE.CylinderGeometry(width / 2, width / 2, height, 24),
+          material,
+        );
+      }
+    }
+
+    return new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+  }
+
+  _attachGlbModel(group, machine) {
+    if (!machine.modelUrl) {
+      return;
+    }
+
+    const token = Symbol('gltf-load');
+    group.userData.loadToken = token;
+
+    this._getCachedGlb(machine.modelUrl)
+      .then((gltf) => {
+        if (this._isDisposed || group.userData.loadToken !== token) {
+          return;
+        }
+
+        const model = gltf.scene || gltf.scenes?.[0];
+        if (!model) {
+          return;
+        }
+
+        const bounds = new THREE.Box3().setFromObject(model);
+        const size = bounds.getSize(new THREE.Vector3());
+        const targetSize = new THREE.Vector3(...machine.size);
+        const scale = Math.min(
+          targetSize.x / Math.max(size.x, 0.0001),
+          targetSize.y / Math.max(size.y, 0.0001),
+          targetSize.z / Math.max(size.z, 0.0001),
+        );
+        const center = bounds.getCenter(new THREE.Vector3());
+
+        model.position.sub(center.multiplyScalar(scale));
+        model.scale.setScalar(scale);
+
+        if (group.userData.bodyMesh) {
+          group.userData.bodyMesh.visible = false;
+        }
+        group.add(cloneSkeleton(model));
+      })
+      .catch((error) => {
+        if (this._isDisposed || group.userData.loadToken !== token) {
+          return;
+        }
+
+        console.warn(`Failed to load GLB asset: ${machine.modelUrl}`, error);
+        if (group.userData.bodyMesh) {
+          group.userData.bodyMesh.visible = true;
+        }
+      });
+  }
+
+  _getCachedGlb(modelUrl) {
+    if (this._glbCache.has(modelUrl)) {
+      return this._glbCache.get(modelUrl);
+    }
+
+    const promise = this.gltfLoader.loadAsync(modelUrl);
+    this._glbCache.set(modelUrl, promise);
+    return promise;
   }
 
   _setSelection(machineId) {
@@ -170,6 +304,21 @@ export class PlantScene {
     this.machineRoots.set(machine.id, node);
     this.scene.add(node);
     return node;
+  }
+
+  addAsset(asset, position) {
+    const nextAsset = {
+      kind: asset.kind ?? 'machine',
+      primitiveType: asset.primitiveType,
+      modelUrl: asset.modelUrl,
+      id: asset.id,
+      name: asset.name,
+      position: position ?? asset.position ?? [0, 0, 0],
+      size: asset.size ?? [3, 3, 3],
+      color: asset.color ?? 0x7bdff2,
+    };
+
+    return this.addMachine(nextAsset);
   }
 
   removeMachine(machineId) {
@@ -209,6 +358,7 @@ export class PlantScene {
   }
 
   handlePointerDown(event) {
+    // Check if we're clicking on a machine
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -219,19 +369,125 @@ export class PlantScene {
       true,
     );
 
-    if (!intersections.length) {
-      this._setSelection(null);
-      return;
+    // If we clicked on a machine, select it and return immediately
+    if (intersections.length > 0) {
+      let current = intersections[0].object;
+      while (current && !current.userData.machineId) {
+        current = current.parent;
+      }
+
+      if (current?.userData.machineId) {
+        this._setSelection(current.userData.machineId);
+        return;
+      }
     }
 
-    let current = intersections[0].object;
-    while (current && !current.userData.machineId) {
-      current = current.parent;
-    }
+    // If we didn't click on a machine, clear selection
+    this._setSelection(null);
 
-    if (current?.userData.machineId) {
-      this._setSelection(current.userData.machineId);
+    // Start dragging only for left/right button on empty space
+    // Only start drag state for left mouse button (0) or right mouse button (2)
+    if (event.button === 0 || event.button === 2) {
+      this._isDragging = true;
+      this._lastPointer.set(event.clientX, event.clientY);
+
+      // Set drag mode based on button
+      if (event.button === 2) { // Right mouse button - orbit
+        this._dragMode = 'orbit';
+        this.canvas.style.cursor = 'grab';
+        event.preventDefault(); // Prevent context menu
+      } else if (event.button === 0) { // Left mouse button - pan
+        this._dragMode = 'pan';
+        this.canvas.style.cursor = 'grabbing';
+      }
     }
+  }
+
+  handlePointerMove(event) {
+    if (!this._isDragging || !this._dragMode) return;
+
+    const deltaX = event.clientX - this._lastPointer.x;
+    const deltaY = event.clientY - this._lastPointer.y;
+    this._lastPointer.set(event.clientX, event.clientY);
+
+    if (this._dragMode === 'orbit') { // Right mouse button - orbit
+      this._cameraAzimuth += deltaX * 0.01;
+      this._cameraPolar -= deltaY * 0.01;
+      this._cameraPolar = Math.max(0.01, Math.min(Math.PI - 0.01, this._cameraPolar));
+      this._updateCameraPosition();
+    } else if (this._dragMode === 'pan') { // Left mouse button - pan
+      const panSpeed = 0.004;
+      const cameraPosition = this.camera.position;
+      const target = this._cameraTarget;
+
+      const forward = new THREE.Vector3()
+        .subVectors(target, cameraPosition)
+        .setY(0);
+      if (forward.lengthSq() === 0) {
+        forward.set(0, 0, -1);
+      }
+      forward.normalize();
+
+      const right = new THREE.Vector3()
+        .crossVectors(new THREE.Vector3(0, 1, 0), forward)
+        .normalize();
+
+      target.x += right.x * deltaX * panSpeed * this._cameraDistance;
+      target.z += right.z * deltaX * panSpeed * this._cameraDistance;
+      target.x += forward.x * deltaY * panSpeed * this._cameraDistance;
+      target.z += forward.z * deltaY * panSpeed * this._cameraDistance;
+
+      this._updateCameraPosition();
+    }
+  }
+
+  handlePointerUp(event) {
+    this._isDragging = false;
+    this._dragMode = null;
+    this.canvas.style.cursor = 'default';
+  }
+
+  handlePointerCancel(event) {
+    this._isDragging = false;
+    this._dragMode = null;
+    this.canvas.style.cursor = 'default';
+  }
+
+  handleWheel(event) {
+    event.preventDefault();
+
+    const zoomFactor = Math.exp(event.deltaY * 0.001);
+    const minDistance = 6;
+    const maxDistance = 140;
+
+    this._cameraDistance = THREE.MathUtils.clamp(
+      this._cameraDistance * zoomFactor,
+      minDistance,
+      maxDistance,
+    );
+    this._updateCameraPosition();
+  }
+
+  screenToGroundPoint(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+
+    const hit = new THREE.Vector3();
+    return this.raycaster.ray.intersectPlane(this._groundPlane, hit) ? hit : null;
+  }
+
+  _updateCameraPosition() {
+    const target = this._cameraTarget;
+    const distance = this._cameraDistance;
+
+    const x = target.x + distance * Math.sin(this._cameraPolar) * Math.cos(this._cameraAzimuth);
+    const y = target.y + distance * Math.cos(this._cameraPolar);
+    const z = target.z + distance * Math.sin(this._cameraPolar) * Math.sin(this._cameraAzimuth);
+
+    this.camera.position.set(x, y, z);
+    this.camera.lookAt(target);
   }
 
   resize() {
@@ -264,7 +520,13 @@ export class PlantScene {
     }
 
     window.removeEventListener('resize', this._onResize);
+    this._resizeObserver?.disconnect();
     this.canvas.removeEventListener('pointerdown', this._onPointerDown);
+    this.canvas.removeEventListener('pointermove', this._onPointerMove);
+    this.canvas.removeEventListener('pointerup', this._onPointerUp);
+    this.canvas.removeEventListener('pointercancel', this._onPointerCancel);
+    this.canvas.removeEventListener('wheel', this._onWheel);
+    this.canvas.removeEventListener('contextmenu', this._onContextMenu);
     this.clearMachines();
     this.renderer.dispose();
   }
