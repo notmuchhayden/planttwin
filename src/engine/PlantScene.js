@@ -413,6 +413,11 @@ export class PlantScene {
       }
     }
 
+    // Check if we're interacting with the TransformControls gizmo
+    if (this.transformControls.object && this.transformControls.axis !== null) {
+      return; // Prevent empty-space interaction
+    }
+
     // If we didn't click on a machine, clear selection
     this._setSelection(null);
 
