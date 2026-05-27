@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 export class PlantScene {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.onSelectionChange = options.onSelectionChange ?? (() => {});
+    this.onGizmoChange = options.onGizmoChange ?? (() => {});
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0b1020);
     this.scene.fog = new THREE.Fog(0x0b1020, 35, 120);
@@ -47,11 +49,31 @@ export class PlantScene {
     this._cameraAzimuth = Math.atan2(cameraToTarget.z, cameraToTarget.x);
     this._cameraPolar = Math.acos(cameraToTarget.y / this._cameraDistance);
 
+    // TransformControls
+    this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
+    this.transformControls.mode = 'translate';
+    this.transformControls.space = 'world';
+    this.scene.add(this.transformControls.getHelper());
+    this.transformControls.addEventListener('change', () => {
+      const selected = this.transformControls.object;
+      if (selected) {
+        const machineId = selected.userData.machineId;
+        const position = selected.position.clone();
+        this.onGizmoChange(machineId, position);
+      }
+    });
+
+    // Start hidden until a machine is selected.
+    this.transformControls.detach();
+
     this._buildEnvironment();
     this._bindEvents();
     this._bindResizeObserver();
     this.resize();
     this.animate();
+
+    // Set cursor styles
+    this.canvas.style.cursor = 'default';
   }
 
   _buildEnvironment() {
@@ -293,6 +315,15 @@ export class PlantScene {
     }
 
     this.onSelectionChange(this.selectedMachineId);
+
+    // Detach gizmo when nothing is selected
+    if (!this.selectedMachineId) {
+      this.transformControls.detach();
+    } else {
+      // Attach gizmo to the selected machine root
+      const selectedNode = this.machineRoots.get(this.selectedMachineId);
+      this.transformControls.attach(selectedNode);
+    }
   }
 
   addMachine(machine) {
@@ -529,5 +560,7 @@ export class PlantScene {
     this.canvas.removeEventListener('contextmenu', this._onContextMenu);
     this.clearMachines();
     this.renderer.dispose();
+    this.scene.remove(this.transformControls.getHelper()); // Remove helper from scene
+    this.transformControls.dispose();
   }
 }

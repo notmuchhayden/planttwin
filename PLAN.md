@@ -25,17 +25,14 @@ Build a Siemens Plant Simulation-like web app for 3D factory layout planning.
 - [x] Cache loaded assets so repeated placement is fast.
 - [x] Add thumbnail generation or thumbnail mapping for GLB assets.
 
-## Phase 4: Layout Editing
-
-11. Support selecting placed assets in the viewport.
-12. Support moving placed assets after selection.
-13. Keep the asset list and scene state synchronized.
+## Phase 4: Transform Gizmo
+- [x] 객체 선택시 Three.js editor 의 TransformControls Translate Gizmo 가 표시되도록 하기
 
 ## Phase 5: Plant Simulation Direction
 
-14. Add the foundation for factory cells, stations, and lines.
-15. Make the scene suitable for large layouts with future performance optimizations.
-16. Extend the UI for inspection, property editing, and layout management.
+- [ ] Add the foundation for factory cells, stations, and lines.
+- [ ] Make the scene suitable for large layouts with future performance optimizations.
+- [ ] Extend the UI for inspection, property editing, and layout management.
 
 ## Working Notes
 

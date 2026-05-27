@@ -185,6 +185,14 @@ export default function App() {
   useEffect(() => {
     const scene = new PlantScene(canvasRef.current, {
       onSelectionChange: setSelectedId,
+      onGizmoChange: (machineId, newPosition) => {
+        const position = [newPosition.x, newPosition.y, newPosition.z];
+        setAssets((current) =>
+          current.map((asset) =>
+            asset.id === machineId ? { ...asset, position } : asset,
+          ),
+        );
+      },
     });
 
     sceneRef.current = scene;
