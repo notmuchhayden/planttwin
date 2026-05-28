@@ -32,6 +32,7 @@ export class Viewport {
     this.pointer = new THREE.Vector2();
     this._groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     this.machineRoots = new Map();
+    this.layoutState = null;
     this.selectedMachineId = null;
     this._isDisposed = false;
     this._selectionBounds = new THREE.Box3();
@@ -88,7 +89,8 @@ export class Viewport {
 
     // Initialize Editor
     this.editor = new Editor();
-    this.editor.subscribe((machineRoots, selectedMachineId) => {
+    this.editor.subscribe((machineRoots, selectedMachineId, layoutState) => {
+      this.layoutState = layoutState;
       this.selectedMachineId = selectedMachineId;
       this.onSelectionChange(selectedMachineId);
       this._syncNodes();
@@ -207,23 +209,6 @@ export class Viewport {
     body.receiveShadow = true;
     body.visible = machine.kind !== 'glb';
     group.add(body);
-
-    const accent = new THREE.Mesh(
-      new THREE.BoxGeometry(
-        machine.size[0] * 0.6,
-        Math.max(0.12, machine.size[1] * 0.12),
-        machine.size[2] * 0.62,
-      ),
-      new THREE.MeshStandardMaterial({
-        color: 0x0f1321,
-        roughness: 0.7,
-        metalness: 0.1,
-      }),
-    );
-    accent.position.y = machine.size[1] * 0.96;
-    accent.castShadow = true;
-    accent.receiveShadow = true;
-    group.add(accent);
 
     group.userData.bodyMaterial = bodyMaterial;
     group.userData.bodyMesh = body;
@@ -385,6 +370,34 @@ export class Viewport {
 
   addAsset(asset, position) {
     this.editor.addAsset(asset, position);
+  }
+
+  addCell(cell) {
+    this.editor.addCell(cell);
+  }
+
+  addStation(station) {
+    this.editor.addStation(station);
+  }
+
+  addLine(line) {
+    this.editor.addLine(line);
+  }
+
+  replaceCells(cells) {
+    this.editor.replaceCells(cells);
+  }
+
+  replaceStations(stations) {
+    this.editor.replaceStations(stations);
+  }
+
+  replaceLines(lines) {
+    this.editor.replaceLines(lines);
+  }
+
+  clearLayout() {
+    this.editor.clearLayout();
   }
 
   removeMachine(machineId) {

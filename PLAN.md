@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a Siemens Plant Simulation-like web app for 3D factory layout planning.
+Build a web-based 3D factory layout and digital twin editor, Siemens Plant Simulation-like.
 
 ## Phase 1: Core Input
 
@@ -42,7 +42,7 @@ Build a Siemens Plant Simulation-like web app for 3D factory layout planning.
 ## Phase 6: File Loading
 
 - [x] Add a `+` button in the Asset Palette to load local `.glb` files and cache them for later placement.
-- [ ] Add the foundation for factory cells, stations, and lines.
+- [x] Add the foundation for factory cells, stations, and lines.
 - [ ] Make the scene suitable for large layouts with future performance optimizations.
 - [ ] Extend the UI for inspection, property editing, and layout management.
 
