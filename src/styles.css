@@ -58,6 +58,18 @@ button.ghost {
   border-color: rgba(158, 176, 201, 0.2);
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .app-shell {
   width: 100%;
   min-height: 100%;
@@ -69,7 +81,8 @@ button.ghost {
 .workspace {
   flex: 1;
   min-height: 0;
-  overflow: visible;
+  height: 100%;
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
   gap: 1rem;
@@ -79,8 +92,9 @@ button.ghost {
 .content-stack {
   min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -198,7 +212,6 @@ button.ghost {
 .viewport {
   min-width: 0;
   min-height: 0;
-  flex: 0 0 clamp(18rem, 48vh, 31rem);
   display: flex;
 }
 
@@ -247,6 +260,10 @@ button.ghost {
   transition: max-height 240ms ease, padding 240ms ease;
 }
 
+.asset-palette.open {
+  max-height: none;
+}
+
 .asset-palette.closed {
   max-height: 5.8rem;
   padding-bottom: 0.75rem;
@@ -281,6 +298,31 @@ button.ghost {
   min-width: 0;
 }
 
+.asset-palette-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.palette-add-button {
+  width: 2.3rem;
+  height: 2.3rem;
+  padding: 0;
+  border-radius: 999px;
+  border-color: rgba(123, 223, 242, 0.32);
+  background: linear-gradient(180deg, rgba(123, 223, 242, 0.18), rgba(17, 25, 42, 0.96));
+  color: var(--accent);
+  font-size: 1.4rem;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.palette-add-button:hover {
+  transform: translateY(-1px) scale(1.02);
+  border-color: rgba(123, 223, 242, 0.55);
+}
+
 .asset-palette-header h2 {
   margin: 0.15rem 0 0;
   font-size: 1.2rem;
@@ -309,8 +351,9 @@ button.ghost {
 }
 
 .asset-palette-body {
-  overflow: hidden;
-  max-height: 24vh;
+  min-height: 0;
+  overflow: auto;
+  max-height: none;
   opacity: 1;
   transform: translateY(0);
   transition: max-height 240ms ease, opacity 180ms ease, transform 240ms ease;

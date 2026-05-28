@@ -24,3 +24,10 @@ This repository is for a 3D plant twin application.
 - If a task crosses files, requires design judgment, or needs state synchronization, break it into smaller passes before delegating.
 - After a local LLM edit, verify the result with a build or targeted check before expanding scope.
 - If repeated retries or review overhead start to outweigh the saved coding work, stop delegating that task and handle the remaining change directly.
+
+## Codex Role
+
+- Codex should handle design, scoping, review, and verification.
+- Delegate actual code changes to `aider` only for small, mechanical edits.
+- For architecture changes, multi-file refactors, or any change that requires keeping shared state consistent, Codex should make the code changes directly.
+- Do not force `aider` onto a task when it is slowing progress or producing low-quality structure.

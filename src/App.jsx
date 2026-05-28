@@ -31,7 +31,7 @@ const initialAssets = [
   },
 ];
 
-const paletteTabs = [
+const basePaletteTabs = [
   {
     id: 'primitives',
     label: 'Primitives',
@@ -114,6 +114,14 @@ function createAssetId(index) {
   return `a-${String(index + 1).padStart(3, '0')}`;
 }
 
+function createLoadedGlbId(fileName, index) {
+  const safeName = fileName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `glb-${safeName || 'asset'}-${index + 1}`;
+}
+
 function createPlacedAsset(template, index, position) {
   return {
     ...template,
@@ -160,17 +168,20 @@ function svgThumbnail({
 }
 
 function getPaletteItems(tabId) {
-  return paletteTabs.find((tab) => tab.id === tabId)?.items ?? [];
+  return basePaletteTabs.find((tab) => tab.id === tabId)?.items ?? [];
 }
 
 export default function App() {
   const canvasRef = useRef(null);
+  const glbInputRef = useRef(null);
   const sceneRef = useRef(null);
   const nextAssetIndexRef = useRef(initialAssets.length);
+  const loadedGlbUrlsRef = useRef([]);
   const [assets, setAssets] = useState(initialAssets);
   const [selectedId, setSelectedId] = useState(initialAssets[1].id);
   const [activePaletteTab, setActivePaletteTab] = useState('primitives');
   const [isPaletteOpen, setIsPaletteOpen] = useState(true);
+  const [loadedGlbAssets, setLoadedGlbAssets] = useState([]);
 
   const selectedAsset = useMemo(
     () => assets.find((asset) => asset.id === selectedId) ?? null,
@@ -178,8 +189,11 @@ export default function App() {
   );
 
   const visiblePaletteItems = useMemo(
-    () => getPaletteItems(activePaletteTab),
-    [activePaletteTab],
+    () =>
+      activePaletteTab === 'glb'
+        ? [...getPaletteItems(activePaletteTab), ...loadedGlbAssets]
+        : getPaletteItems(activePaletteTab),
+    [activePaletteTab, loadedGlbAssets],
   );
 
   useEffect(() => {
@@ -202,6 +216,8 @@ export default function App() {
     return () => {
       scene.dispose();
       sceneRef.current = null;
+      loadedGlbUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      loadedGlbUrlsRef.current = [];
     };
   }, []);
 
@@ -216,6 +232,52 @@ export default function App() {
     scene.addAsset(nextAsset, position);
     setAssets((current) => [...current, nextAsset]);
     setSelectedId(nextAsset.id);
+  };
+
+  const openGlbPicker = () => {
+    glbInputRef.current?.click();
+  };
+
+  const handleGlbFilesSelected = (event) => {
+    const files = Array.from(event.target.files ?? []).filter((file) => {
+      const isGlbMime = file.type === 'model/gltf-binary' || file.type === 'model/gltf+json';
+      return isGlbMime || file.name.toLowerCase().endsWith('.glb');
+    });
+
+    if (files.length === 0) {
+      event.target.value = '';
+      return;
+    }
+
+    setLoadedGlbAssets((current) => {
+      const baseIndex = current.length;
+      const nextItems = files.map((file, offset) => {
+        const url = URL.createObjectURL(file);
+        loadedGlbUrlsRef.current.push(url);
+        return {
+          id: createLoadedGlbId(file.name, baseIndex + offset),
+          name: file.name.replace(/\.glb$/i, ''),
+          kind: 'glb',
+          modelUrl: url,
+          size: [4, 3, 4],
+          color: 0xb8d8ff,
+          summary: 'Loaded from local file',
+          thumbnail: svgThumbnail({
+            title: 'GLB',
+            subtitle: file.name,
+            fill: '#b8d8ff',
+            accent: '#101826',
+            variant: 'box',
+          }),
+        };
+      });
+
+      setActivePaletteTab('glb');
+      setIsPaletteOpen(true);
+      return [...current, ...nextItems];
+    });
+
+    event.target.value = '';
   };
 
   const addMachine = () => {
@@ -390,14 +452,32 @@ export default function App() {
                 <span className="palette-kicker">Asset Palette</span>
                 <h2>Drag items into the viewport</h2>
                 <p>
-                  Primitive tiles are ready now. GLB tiles are wired for later asset
-                  drops.
+                  Primitive tiles are ready now. Use the + button to cache local GLB files.
                 </p>
               </div>
-              <span className="palette-header-caret" aria-hidden="true">
-                {isPaletteOpen ? '▾' : '▴'}
+              <span className="asset-palette-actions">
+                <button
+                  type="button"
+                  className="palette-add-button"
+                  aria-label="Load GLB file"
+                  onClick={openGlbPicker}
+                >
+                  +
+                </button>
+                <span className="palette-header-caret" aria-hidden="true">
+                  {isPaletteOpen ? 'v' : '>'}
+                </span>
               </span>
             </button>
+
+            <input
+              ref={glbInputRef}
+              className="visually-hidden"
+              type="file"
+              accept=".glb,model/gltf-binary"
+              multiple
+              onChange={handleGlbFilesSelected}
+            />
 
             <div
               id="asset-palette-body"
@@ -405,7 +485,7 @@ export default function App() {
               aria-hidden={!isPaletteOpen}
             >
               <div className="palette-tabs" role="tablist" aria-label="Asset palette">
-                {paletteTabs.map((tab) => (
+                {basePaletteTabs.map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
