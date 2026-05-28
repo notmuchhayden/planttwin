@@ -1,6 +1,6 @@
 # Plant Twin
 
-3D plant twin layout application starter.
+Web-based 3D factory layout and digital twin editor for Siemens Plant Simulation-like planning.
 
 ## Structure
 
